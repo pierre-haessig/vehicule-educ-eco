@@ -121,15 +121,15 @@ def random_v(v_prev):
     sera inchangée'''
     N = len(v_prev)
     scale = np.random.rayleigh(0.004)
-    phi = 1-10**np.random.uniform(-8,-2)
-    # phi = 0.99999
+    corr = 1-10**np.random.uniform(-8,-2)
+    corr = 1-10**-3
+    # corr = 0.99999
     #scale = 0.1
     noise = np.random.normal(size=N, scale=scale)
-    # Filtrage passe-bas
-    noise = lfilter([np.sqrt(1-phi**2)],[1. , -phi], noise)
-    #noise = lfilter([1/np.sqrt(N)],[1. , -1], noise)
+    # Filtrage passe-bas, normalisé en puissance
+    noise = lfilter([np.sqrt(1-corr**2)],[1. , -corr], noise)
     v = v_prev + (noise - noise.mean())
-    return v, scale
+    return v, scale, corr
     
 def random_search(niter):
     '''recherche aléatoire d'un minimiseur'''
@@ -138,11 +138,13 @@ def random_search(niter):
     E = crit_E_tot(v0)
     v_best = v0
     E_best = E
+    # Mémoire des améliorations successives :
     E_list = []
     i_list = []
     scale_list = []
+    corr_list = []
     for i in xrange(niter):
-        v,scale = random_v(v_best)
+        v,scale,corr = random_v(v_best)
         E = crit_E_tot(v)
         
         if E < E_best:
@@ -152,15 +154,17 @@ def random_search(niter):
             E_list.append(crit_E_tot(v, with_penalty=False))
             i_list.append(i)
             scale_list.append(scale)
+            corr_list.append(corr)
     
-    return (v_best, E_best, E_list, i_list, scale_list)
+    return (v_best, E_best, E_list, i_list, scale_list, corr_list)
 
 n_iter = 10**5
 print('Optimisation aléatoire en %d itérations...' %n_iter)
 result = random_search(n_iter)
-v_best, E_best, E_list, i_list, scale_list = result
+v_best, E_best, E_list, i_list, scale_list, corr_list = result
 E_best = crit_E_tot(v_best, with_penalty=False)
-print('itérations apportant une amélioration : %d' % len(E_list))
+print('itérations apportant une amélioration : %d (%.1f %%)' % 
+      (len(E_list), len(E_list)/n_iter*100 ))
 
 print('Énergie consommée après optim : %.2f kJ soit %.1f %% E0' % (E_best/1000, E_best/E0*100))
 
