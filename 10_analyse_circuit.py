@@ -48,10 +48,10 @@ altitude = interp1d(x=z_data[:,0], y=z_data[:,1], kind='linear')
 z = altitude(l)
 dzdl = np.gradient(z,dl)
 
-# Vitesse constante:
-v = np.ones(N)*v_min
-v = np.load('vitesse_best_0977.npy')
-profil_v = 'best_0977'
+# Profil de vitesse 
+#v = np.ones(N)*v_min # Vitesse constante
+v = np.load(os.path.join(dossier_circuit,'vitesse_best_0976.npy'))
+profil_v = 'best_0976'
 dvdl = np.gradient(v,dl)
 
 # Calcul des forces:
@@ -73,6 +73,10 @@ P_joule = Cj*f_mot**2
 E_mot = f_mot.sum()*dl
 E_joule = (P_joule/v).sum()*dl
 E_totale = E_mot + E_joule
+
+# Énergies de stockage
+E_pes = m*g*(z-z.min())
+E_cin = m/2*v**2
 
 ### Bilan écrit #########################
 
@@ -131,14 +135,30 @@ ax.plot(l, f_iner, 'orange',
         label='inertie')
 ax.legend()
 
+### Bilan d'énergie mécanique
+fig = plt.figure('Energie %s' % dossier_circuit)
+ax=fig.add_subplot(111, title=u'Bilan d\'énergie mécanique'
+                        u' (profil "%s")' % profil_v,
+                        xlabel='abscisse l [m]',
+                        ylabel=u'Énergie [kJ]')
+ax.plot(l,E_cin/1000, 'blue', label=u'cinétique')
+ax.plot(l,E_pes/1000, 'green', label=u'potentielle')
+ax.plot(l,(E_pes+E_cin)/1000, 'red', label=u'mécanique')
+ax.legend(loc='upper right')
+ax.grid(True)
+
+
 ### Bilan de puissance:
-fig = plt.figure('Bilan puissance de %s' % dossier_circuit)
-ax=fig.add_subplot(111, title='Bilan de puissance "%s"' %\
-                               dossier_circuit,
+fig = plt.figure('Bilan puissance de %s (profil vitesse "%s")' %
+                  (dossier_circuit, profil_v))
+ax=fig.add_subplot(111, title='Bilan de puissance %s '
+                              ' (profil vitesse "%s")' %
+                              (dossier_circuit, profil_v),
                         xlabel='abscisse l [m]',
                         ylabel='Puissance [W]')
-ax.plot(l, P_mot, 'blue', label='$f_{mot} \cdot v(l)$')
-ax.plot(l, P_joule, 'red', label='dissipation Joule')
+ax.plot(l, P_mot, 'blue',  label=u'Puiss. motrice')
+ax.plot(l, P_joule, 'red', label=u'dissipation Joule')
+ax.plot(l, P_mot+P_joule, 'green', label=u'Puiss. élec')
 ax.grid(True)
 ax.legend()
 
