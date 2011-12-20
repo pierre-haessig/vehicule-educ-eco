@@ -1,0 +1,11 @@
+# Description de l'altitude du circuit à parcourir
+# en fonction de l'abscisse curviligne l
+# Les données sont exprimées en mètres
+Abscisse l, Altitude z
+0,90
+100,90
+110,91
+500,92
+550,95
+600,91
+3636,90
