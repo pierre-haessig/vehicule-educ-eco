@@ -50,7 +50,7 @@ dzdl = np.gradient(z,dl)
 
 # Profil de vitesse 
 #v = np.ones(N)*v_min # Vitesse constante
-v = np.load(os.path.join(dossier_circuit,'vitesse_best_0976.npy'))
+v = np.load(os.path.join(dossier_circuit,'vitesse_smooth_0976.npy'))
 profil_v = 'best_0976'
 dvdl = np.gradient(v,dl)
 

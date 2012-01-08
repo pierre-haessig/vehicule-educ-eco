@@ -53,34 +53,8 @@ altitude = interp1d(x=z_data[:,0], y=z_data[:,1], kind='linear')
 z = altitude(l)
 dzdl = np.gradient(z,dl)
 
-
-
-def u2v(u, v_moy):
-    '''conversion des variables u à v
-    u : vecteur écarts *libres* (dim N-1)
-    v_moy : vitesse moyenne
-    
-    Renvoie
-    -------
-    v : vitesses (dim N)
-    
-    Formule appliquée :
-    v(0)   = v_moy + u(0)
-    v(i)   = v_moy + u(i) - u(i-1) pour i in [1, N-2]
-    v(N-1) = v_moy +      - u(N-2)
-    
-    On peut voir u(i) comme un écart de position
-    par rapport à la position qu'il faut avoir pour
-    que la vitesse soit constante égale à v_moy
-    '''
-    v = np.ones(N)*v_moy
-    v[0:N-1] += u
-    v[1:N]   -= u
-    return v
-     
-# Vitesse constante:
-u0 = np.zeros(N-1)
-v0 = u2v(u0, v_min)
+# Profil de vitesse initial :
+v0 = np.ones(N)*v_min # vitesse constante
 
 def crit_E_tot(v, with_penalty=True):
     '''critère à optimiser : 
@@ -118,7 +92,9 @@ print("Énergie consommée à vitesse constante : %.1f kJ" %
 def random_v(v_prev):
     '''génère un vecteur vitesse aléatoirement
     en se basant sur un vecteur vitesse dont la moyenne
-    sera inchangée'''
+    sera inchangée
+    Méthode de génération : bruit AR(1)
+    '''
     N = len(v_prev)
     scale = np.random.rayleigh(0.004)
     corr = 1-10**np.random.uniform(-8,-2)
@@ -130,7 +106,40 @@ def random_v(v_prev):
     noise = lfilter([np.sqrt(1-corr**2)],[1. , -corr], noise)
     v = v_prev + (noise - noise.mean())
     return v, scale, corr
+
+def random_v2(v_prev):
+    '''génère un vecteur vitesse aléatoirement
+    en se basant sur un vecteur vitesse dont la moyenne
+    sera inchangée
+    Méthode de génération : coup d'accélérateur aléatoire
+    '''
+    N = len(v_prev)
+    scale = np.random.rayleigh(0.0005)
+    scale = np.random.normal(scale=0.001)
     
+    # Tirage de la largeur du "coup de boost"
+    # entre 0 et 1, avec un exposant qui augmente l'occurence des faibles valeurs
+    largeur = (np.random.uniform()**2)
+    demi_largeur = int(largeur*N/2)+1
+    
+    accel = np.zeros(N)    
+    # Génération du "coup de boost"
+    boost = (np.cos(np.arange(-demi_largeur,demi_largeur+1)*np.pi/demi_largeur)+1)*(scale/2)
+    # Tirage aléatoire de la localisation
+    x0 = np.random.randint(N)
+    x_boost = np.arange(x0-demi_largeur, x0+demi_largeur+1) % N
+    accel[x_boost] = boost
+    
+    # Recentrer l'accélération:
+    accel -= accel.mean()
+    
+    # Intégration discrète:
+    v = accel.cumsum()
+    # Recentrer la vitesse :
+    v -= v.mean()
+    
+    return v + v_prev, scale, largeur
+
 def random_search(niter):
     '''recherche aléatoire d'un minimiseur'''
     np.random.seed(0)
@@ -144,7 +153,7 @@ def random_search(niter):
     scale_list = []
     corr_list = []
     for i in xrange(niter):
-        v,scale,corr = random_v(v_best)
+        v,scale,corr = random_v2(v_best)
         E = crit_E_tot(v)
         
         if E < E_best:
@@ -158,40 +167,42 @@ def random_search(niter):
     
     return (v_best, E_best, E_list, i_list, scale_list, corr_list)
 
-n_iter = 10**5
-print('Optimisation aléatoire en %d itérations...' %n_iter)
-result = random_search(n_iter)
-v_best, E_best, E_list, i_list, scale_list, corr_list = result
-E_best = crit_E_tot(v_best, with_penalty=False)
-print('itérations apportant une amélioration : %d (%.1f %%)' % 
-      (len(E_list), len(E_list)/n_iter*100 ))
+# Lancement de l'optimisation
+if __name__=='__main__':
+    n_iter = 10**4
+    print('Optimisation aléatoire en %d itérations...' %n_iter)
+    result = random_search(n_iter)
+    v_best, E_best, E_list, i_list, scale_list, corr_list = result
+    E_best = crit_E_tot(v_best, with_penalty=False)
+    print('itérations apportant une amélioration : %d (%.1f %%)' % 
+          (len(E_list), len(E_list)/n_iter*100 ))
 
-print('Énergie consommée après optim : %.2f kJ soit %.1f %% E0' % (E_best/1000, E_best/E0*100))
+    print('Énergie consommée après optim : %.2f kJ soit %.1f %% E0' % (E_best/1000, E_best/E0*100))
 
-# Tracé du profil de vitesse :
-plt.figure('optim vitesse')
-plt.plot(l,v_best)
-plt.hlines(v_min,0,L, colors='blue', linestyles='dashed')
-plt.title(u'Vitesse : profil optimisé (%d itérations)' % n_iter)
-plt.xlabel('abscisse l [m]')
-plt.ylabel('vitesse [m/s]')
-plt.grid(True)
-plt.twinx()
-plt.plot(l,z, 'g')
-plt.xlabel('altitude z [m]')
+    # Tracé du profil de vitesse :
+    plt.figure('optim vitesse')
+    plt.plot(l,v_best)
+    plt.hlines(v_min,0,L, colors='blue', linestyles='dashed')
+    plt.title(u'Vitesse : profil optimisé (%d itérations)' % n_iter)
+    plt.xlabel('abscisse l [m]')
+    plt.ylabel('vitesse [m/s]')
+    plt.grid(True)
+    plt.twinx()
+    plt.plot(l,z, 'g')
+    plt.xlabel('altitude z [m]')
 
-# Historique des optimum partiels
-plt.figure('optim hist')
-plt.subplot(211)
-plt.hist(np.array(E_list)/E0*100, normed=True)
-plt.title(u'Optimum intermédiaires (%d itérations)' % n_iter)
-plt.vlines(100, *plt.ylim(), colors='r')
-plt.grid(True)
-plt.subplot(212)
-plt.plot(i_list, E_list/E0*100)
-plt.ylabel('E_best/E0 [%]')
-plt.xlim((0, n_iter))
-plt.hlines(100, 0, n_iter, colors='r')
-plt.grid(True)
+    # Historique des optimum partiels
+    plt.figure('optim hist')
+    plt.subplot(211)
+    plt.hist(np.array(E_list)/E0*100, normed=True)
+    plt.title(u'Optimum intermédiaires (%d itérations)' % n_iter)
+    plt.vlines(100, *plt.ylim(), colors='r')
+    plt.grid(True)
+    plt.subplot(212)
+    plt.plot(i_list, E_list/E0*100)
+    plt.ylabel('E_best/E0 [%]')
+    plt.xlim((0, n_iter))
+    plt.hlines(100, 0, n_iter, colors='r')
+    plt.grid(True)
 
-plt.show()
+    plt.show()
