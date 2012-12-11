@@ -11,6 +11,7 @@ Pierre Haessig — Décembre 2011
 
 from __future__ import division, print_function
 import os.path
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
@@ -20,6 +21,8 @@ from scipy.interpolate import interp1d
 # Paramètres du circuit
 dossier_circuit = 'Circuit_Nogaro'
 L = 3636.0 # [m]
+# point de départ de la course :
+l_depart = 630 # [m] (décalage par rapport aux relevés d'altitude)
 N = 3637*1 # nombre de points de discrétisation
 # Vitesse moyenne minimale (30 km/h)
 v_min = 30/3.6 # [m/s]
@@ -50,7 +53,7 @@ z_data = np.loadtxt(os.path.join(dossier_circuit,'altitude.csv'),
                     delimiter=',', skiprows=4)
 altitude = interp1d(x=z_data[:,0], y=z_data[:,1], kind='linear')
 
-z = altitude(l)
+z = altitude((l+l_depart) % L)
 dzdl = np.gradient(z,dl)
 
 # Profil de vitesse initial :
@@ -76,16 +79,20 @@ def crit_E_tot(v, with_penalty=True):
     E_mot = f_mot.sum()*dl
     E_joule = (Cj*f_mot**2/v).sum()*dl
     E_totale = E_mot + E_joule
-    # Décompte de la perte d'énergie cinétique en fin de tour
-    #dE_cin = m/2.*(v[-1]**2 - (v[0]**2))
+    # Pénalisation de contrainte :
     penalty = 0
     if with_penalty:
-        # pénalise une différence de vitesse entre 
+        # a) pénalise une différence de vitesse entre 
         # le début et la fin du tour
-        penalty = 10**5 * (v[0]-v[-1])**2
+        #penalty += 10**5 * (v[0]-v[-1])**2
+        # b) Pénalisation de la vitesse initiale
+        # (pour forcer un départ arrêté)
+        penalty = 10**5 * v[0]**2
+        # c) Pénalisation d'une chute de vitesse à la fin du tour :
+        penalty += 10**5 * (v[-1]- 8.3)**2
     return (E_totale + penalty)
 
-E0 = crit_E_tot(v0)
+E0 = crit_E_tot(v0, with_penalty=False)
 print("Énergie consommée à vitesse constante : %.1f kJ" %
       (E0/1000))
 
@@ -96,7 +103,9 @@ def random_v(v_prev):
     Méthode de génération : bruit AR(1)
     '''
     N = len(v_prev)
-    scale = np.random.rayleigh(0.004)
+    scale = np.random.rayleigh(0.0005) # TODO : trouver un mécanisme automatique
+    # de réduction de l'écart-type au fur et à mesure
+    # que l'optimisation progresse
     corr = 1-10**np.random.uniform(-8,-2)
     corr = 1-10**-3
     # corr = 0.99999
@@ -105,9 +114,12 @@ def random_v(v_prev):
     # Filtrage passe-bas, normalisé en puissance
     noise = lfilter([np.sqrt(1-corr**2)],[1. , -corr], noise)
     v = v_prev + (noise - noise.mean())
+    # Couper les valeurs négatives de la vitesse
+    # (qui cassent le calcul des Pertes Joules)
+    v[v<1e-3]= 1e-3
     return v, scale, corr
 
-def random_v2(v_prev):
+def random_v2(v_prev, profil_cyclique=False):
     '''génère un vecteur vitesse aléatoirement
     en se basant sur un vecteur vitesse dont la moyenne
     sera inchangée
@@ -127,9 +139,14 @@ def random_v2(v_prev):
     boost = (np.cos(np.arange(-demi_largeur,demi_largeur+1)*np.pi/demi_largeur)+1)*(scale/2)
     # Tirage aléatoire de la localisation
     x0 = np.random.randint(N)
-    x_boost = np.arange(x0-demi_largeur, x0+demi_largeur+1) % N
-    accel[x_boost] = boost
-    
+    x_boost = np.arange(x0-demi_largeur, x0+demi_largeur+1)
+    if profil_cyclique:
+        # Le profil d'accélération se reboucle
+        accel[x_boost % N] = boost
+    else:
+        # Le profil d'accélération est coupé hors de [0,N]
+        filtre_intervalle = (x_boost>=0) & (x_boost<N)
+        accel[x_boost[filtre_intervalle]] = boost[filtre_intervalle]
     # Recentrer l'accélération:
     accel -= accel.mean()
     
@@ -137,12 +154,18 @@ def random_v2(v_prev):
     v = accel.cumsum()
     # Recentrer la vitesse :
     v -= v.mean()
-    
-    return v + v_prev, scale, largeur
+    # Ajouter à la vitesse au coup précédent:
+    v += v_prev
+    # Couper les valeurs négatives de la vitesse
+    # (qui cassent le calcul des Pertes Joules)
+    v[v<1e-3]= 1e-3
+    return v, scale, largeur
 
 def random_search(niter):
     '''recherche aléatoire d'un minimiseur'''
     np.random.seed(0)
+    dt_start = datetime.now()
+    # Point de départ : vitesse constante :
     v0 = np.ones(N)*v_min
     E = crit_E_tot(v0)
     v_best = v0
@@ -153,7 +176,7 @@ def random_search(niter):
     scale_list = []
     corr_list = []
     for i in xrange(niter):
-        v,scale,corr = random_v2(v_best)
+        v,scale,corr = random_v(v_best)
         E = crit_E_tot(v)
         
         if E < E_best:
@@ -164,12 +187,15 @@ def random_search(niter):
             i_list.append(i)
             scale_list.append(scale)
             corr_list.append(corr)
-    
+    dt_stop = datetime.now()
+    temps_calcul = (dt_stop - dt_start).total_seconds()
+    print('Fin de l\'optimisation après %.2f secondes (%.0f iter/s)' % 
+          (temps_calcul, niter/temps_calcul))
     return (v_best, E_best, E_list, i_list, scale_list, corr_list)
 
 # Lancement de l'optimisation
 if __name__=='__main__':
-    n_iter = 10**4
+    n_iter = 10**6
     print('Optimisation aléatoire en %d itérations...' %n_iter)
     result = random_search(n_iter)
     v_best, E_best, E_list, i_list, scale_list, corr_list = result

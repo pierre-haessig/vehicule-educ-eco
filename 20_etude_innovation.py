@@ -15,7 +15,8 @@ Pierre Haessig — Décembre 2011
 from __future__ import division, print_function
 import numpy as np
 import matplotlib.pyplot as plt
-
+import optim_circuit
+reload(optim_circuit)
 from optim_circuit import l, v0, v_min, random_v, random_v2
 
 
@@ -34,8 +35,8 @@ plt.figure('bruit boost')
 n = 3
 for i in range(n):
     plt.plot(l,random_v2(v0)[0], color=(0,0.5,i/(n-1)))
-#plt.hlines([v_min-0.004,v_min+0.004], *plt.xlim(),
-#           linestyles='dashed', colors='blue')
+plt.hlines([v_min], *plt.xlim(),
+           linestyles='dashed', colors='blue')
 plt.title('Bruit "boost accel", avec amplitude Rayleigh')
 plt.xlabel('abscisse l [m]')
 plt.ylabel('vitesse [m/s]')

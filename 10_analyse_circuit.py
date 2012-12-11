@@ -18,6 +18,8 @@ from scipy.interpolate import interp1d
 # Paramètres du circuit
 dossier_circuit = 'Circuit_Nogaro'
 L = 3636.0 # [m]
+# point de départ de la course :
+l_depart = 630 # [m] (décalage par rapport aux relevés d'altitude)
 N = 3637*1 # nombre de points de discrétisation
 # Vitesse moyenne minimale (30 km/h)
 v_min = 30/3.6 # [m/s]
@@ -43,15 +45,17 @@ print('Circuit de %.1f m discrétisé avec un pas de %.1f m [%d points]'
 # Altitude z(l)
 z_data = np.loadtxt(os.path.join(dossier_circuit,'altitude.csv'), 
                     delimiter=',', skiprows=4)
-altitude = interp1d(x=z_data[:,0], y=z_data[:,1], kind='linear')
+_altitude = interp1d(x=z_data[:,0], y=z_data[:,1], kind='linear')
+# Décalage d'origine de la course:
+altitude = lambda l : _altitude((l+l_depart) % L)
 
 z = altitude(l)
 dzdl = np.gradient(z,dl)
 
 # Profil de vitesse 
 #v = np.ones(N)*v_min # Vitesse constante
-v = np.load(os.path.join(dossier_circuit,'vitesse_smooth_0976.npy'))
-profil_v = 'best_0976'
+v = np.load(os.path.join(dossier_circuit,'vitesse_stopped_start.npy'))
+profil_v = u'départ arrêté'
 dvdl = np.gradient(v,dl)
 
 # Calcul des forces:
@@ -107,7 +111,7 @@ print('Énergie consommée au total: %.1f kJ' %
 fig = plt.figure('Analyse de %s' % dossier_circuit )
 ax=fig.add_subplot(211, title='altitude & pente "%s"' % dossier_circuit,
                    ylabel='alitude [m]')
-ax.plot(z_data[:,0], z_data[:,1], 'bd')
+ax.plot((z_data[:,0]-l_depart) % L, z_data[:,1], 'bd')
 ax.plot(l, z, 'b')
 ax.grid(True)
 ax.legend(('mesures', 'interpol'), loc='upper left')
